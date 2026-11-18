@@ -1,0 +1,18 @@
+# Xcode & Build Artifacts
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+build/
+Payload/
+output/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# macOS / Windows OS files
+.DS_Store
+Thumbs.db

@@ -1,0 +1,93 @@
+name: Build Unsigned iOS IPA
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-ipa:
+    name: Build & Package NetPulse (.ipa)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Ensure XcodeGen is Installed
+        run: |
+          if ! command -v xcodegen &> /dev/null; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+
+      - name: Generate Xcode Project via XcodeGen
+        run: |
+          xcodegen generate
+          xcodebuild -list -project NetPulse.xcodeproj
+
+      - name: Build iOS App & Widget (CODE_SIGNING_ALLOWED=NO)
+        run: |
+          xcodebuild build \
+            -project NetPulse.xcodeproj \
+            -scheme NetPulse \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            AD_HOC_CODE_SIGNING_ALLOWED=YES \
+            DEVELOPMENT_TEAM=""
+
+      - name: Package Full IPA (App + Widget)
+        run: |
+          APP_PATH="build/Build/Products/Release-iphoneos/NetPulse.app"
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Error: NetPulse.app was not found at $APP_PATH"
+            exit 1
+          fi
+
+          rm -rf Payload output
+          mkdir -p Payload output
+          cp -R "$APP_PATH" Payload/NetPulse.app
+
+          # توقيع Ad-Hoc محلي لتضمين الصلاحيات لـ TrollStore مع بقاء التوافق الكامل مع Sideloadly / AltStore / SideStore
+          if [ -d "Payload/NetPulse.app/PlugIns/NetPulseWidget.appex" ]; then
+            codesign --force --sign - \
+              --entitlements NetPulseWidget/NetPulseWidget.entitlements \
+              Payload/NetPulse.app/PlugIns/NetPulseWidget.appex
+          fi
+
+          codesign --force --sign - \
+            --entitlements NetPulse/Resources/NetPulse.entitlements \
+            Payload/NetPulse.app
+
+          zip -qry output/NetPulse.ipa Payload
+          ls -lh output/NetPulse.ipa
+
+      - name: Package Lite IPA (Without Widget for 3-App-ID Free Accounts)
+        run: |
+          rm -rf Payload/NetPulse.app/PlugIns
+          codesign --force --sign - \
+            --entitlements NetPulse/Resources/NetPulse.entitlements \
+            Payload/NetPulse.app
+          zip -qry output/NetPulse-Lite-NoWidget.ipa Payload
+          ls -lh output/NetPulse-Lite-NoWidget.ipa
+
+      - name: Upload Primary NetPulse.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetPulse-IPA
+          path: output/NetPulse.ipa
+          if-no-files-found: error
+
+      - name: Upload Lite NetPulse-Lite-NoWidget.ipa Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetPulse-Lite-NoWidget-IPA
+          path: output/NetPulse-Lite-NoWidget.ipa
+          if-no-files-found: warn
